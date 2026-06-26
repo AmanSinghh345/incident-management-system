@@ -1,0 +1,126 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum MonitorStatus {
+  UP
+  DOWN
+  DEGRADED
+  PAUSED
+}
+
+enum CheckStatus {
+  SUCCESS
+  FAILURE
+}
+
+enum IncidentStatus {
+  OPEN
+  ACKNOWLEDGED
+  RESOLVED
+}
+
+enum NotificationChannel {
+  EMAIL
+}
+
+enum NotificationStatus {
+  PENDING
+  SENT
+  FAILED
+}
+
+model User {
+  id            String           @id @default(cuid())
+  name          String
+  email         String           @unique
+  passwordHash  String
+  workspaceSlug String           @unique
+  monitors      Monitor[]
+  incidentNotes IncidentUpdate[]
+  notifications Notification[]
+  createdAt     DateTime         @default(now())
+  updatedAt     DateTime         @updatedAt
+}
+
+model Monitor {
+  id              String        @id @default(cuid())
+  name            String
+  url             String
+  intervalSeconds Int           @default(60)
+  failureThreshold Int          @default(3)
+  status          MonitorStatus @default(PAUSED)
+  isActive        Boolean       @default(true)
+  ownerId         String
+  owner           User          @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+  checkResults    CheckResult[]
+  incidents       Incident[]
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+
+  @@index([ownerId])
+}
+
+model CheckResult {
+  id             String      @id @default(cuid())
+  monitorId      String
+  monitor        Monitor     @relation(fields: [monitorId], references: [id], onDelete: Cascade)
+  status         CheckStatus
+  statusCode     Int?
+  responseTimeMs Int?
+  errorMessage   String?
+  checkedAt      DateTime    @default(now())
+
+  @@index([monitorId, checkedAt])
+}
+
+model Incident {
+  id          String           @id @default(cuid())
+  title       String
+  status      IncidentStatus   @default(OPEN)
+  monitorId   String
+  monitor     Monitor          @relation(fields: [monitorId], references: [id], onDelete: Cascade)
+  updates     IncidentUpdate[]
+  notifications Notification[]
+  startedAt   DateTime         @default(now())
+  resolvedAt  DateTime?
+  createdAt   DateTime         @default(now())
+  updatedAt   DateTime         @updatedAt
+
+  @@index([monitorId, status])
+}
+
+model IncidentUpdate {
+  id         String   @id @default(cuid())
+  incidentId String
+  incident   Incident @relation(fields: [incidentId], references: [id], onDelete: Cascade)
+  authorId   String?
+  author     User?    @relation(fields: [authorId], references: [id], onDelete: SetNull)
+  message    String
+  createdAt  DateTime @default(now())
+
+  @@index([incidentId])
+}
+
+model Notification {
+  id         String              @id @default(cuid())
+  channel    NotificationChannel
+  status     NotificationStatus  @default(PENDING)
+  recipient  String
+  subject    String
+  message    String
+  userId     String?
+  user       User?               @relation(fields: [userId], references: [id], onDelete: SetNull)
+  incidentId String?
+  incident   Incident?           @relation(fields: [incidentId], references: [id], onDelete: Cascade)
+  sentAt     DateTime?
+  createdAt  DateTime            @default(now())
+
+  @@index([userId])
+  @@index([incidentId])
+}
