@@ -2,10 +2,14 @@ import { ForbiddenException, Injectable, NotFoundException } from "@nestjs/commo
 import { CheckStatus, IncidentStatus, MonitorStatus } from "@prisma/client";
 import { PrismaService } from "../prisma/prisma.service";
 import type { AuthenticatedUser } from "../monitors/monitors.service";
+import { RealtimeService } from "../realtime/realtime.service";
 
 @Injectable()
 export class ChecksService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly realtimeService: RealtimeService
+  ) {}
 
   async listForMonitor(owner: AuthenticatedUser, monitorId: string) {
     await this.assertMonitorOwner(owner, monitorId);
@@ -18,7 +22,19 @@ export class ChecksService {
   }
 
   async runNow(owner: AuthenticatedUser, monitorId: string) {
-    const monitor = await this.assertMonitorOwner(owner, monitorId);
+    await this.assertMonitorOwner(owner, monitorId);
+
+    return this.runForMonitor(monitorId);
+  }
+
+  async runForMonitor(monitorId: string) {
+    const monitor = await this.prisma.monitor.findUnique({
+      where: { id: monitorId }
+    });
+
+    if (!monitor) {
+      throw new NotFoundException("Monitor not found.");
+    }
 
     if (!monitor.isActive || monitor.status === MonitorStatus.PAUSED) {
       const checkResult = await this.prisma.checkResult.create({
@@ -28,12 +44,15 @@ export class ChecksService {
           errorMessage: "Monitor is paused."
         }
       });
-
-      return {
+      const payload = {
         monitor,
         checkResult,
         incident: null
       };
+
+      this.realtimeService.emitCheckCreated(monitor.ownerId, payload);
+
+      return payload;
     }
 
     const checkedAt = new Date();
@@ -108,11 +127,19 @@ export class ChecksService {
         });
       }
 
-      return {
+      const payload = {
         monitor: updatedMonitor,
         checkResult,
         incident
       };
+
+      this.realtimeService.emitCheckCreated(updatedMonitor.ownerId, payload);
+
+      if (incident) {
+        this.realtimeService.emitIncidentChanged(updatedMonitor.ownerId, incident);
+      }
+
+      return payload;
     }
 
     const updatedMonitor = await this.prisma.monitor.update({
@@ -135,11 +162,19 @@ export class ChecksService {
       });
     }
 
-    return {
+    const payload = {
       monitor: updatedMonitor,
       checkResult,
       incident
     };
+
+    this.realtimeService.emitCheckCreated(updatedMonitor.ownerId, payload);
+
+    if (incident) {
+      this.realtimeService.emitIncidentChanged(updatedMonitor.ownerId, incident);
+    }
+
+    return payload;
   }
 
   private async assertMonitorOwner(owner: AuthenticatedUser, monitorId: string) {

@@ -36,6 +36,24 @@ export interface IncidentSummary {
   resolvedAt: string | null;
 }
 
+export interface IncidentUpdate {
+  id: string;
+  incidentId: string;
+  authorId: string | null;
+  message: string;
+  createdAt: string;
+}
+
+export interface IncidentListItem extends IncidentSummary {
+  monitor: {
+    id: string;
+    name: string;
+    url: string;
+    status: MonitorStatus;
+  };
+  updates: IncidentUpdate[];
+}
+
 export interface MonitorSummary {
   id: string;
   name: string;
@@ -51,6 +69,11 @@ export interface MonitorSummary {
   incidents: IncidentSummary[];
 }
 
+export interface MonitorDetail extends MonitorSummary {
+  checkResults: CheckResult[];
+  incidents: IncidentSummary[];
+}
+
 export interface CreateMonitorInput {
   name: string;
   url: string;
@@ -58,10 +81,31 @@ export interface CreateMonitorInput {
   failureThreshold: number;
 }
 
+export interface UpdateMonitorInput {
+  name?: string;
+  url?: string;
+  intervalSeconds?: number;
+  failureThreshold?: number;
+  isActive?: boolean;
+}
+
 export interface CheckNowResponse {
   monitor: Omit<MonitorSummary, "checkResults" | "incidents">;
   checkResult: CheckResult;
   incident: IncidentSummary | null;
+}
+
+export type RealtimeEventType =
+  | "connected"
+  | "monitor.changed"
+  | "monitor.deleted"
+  | "check.created"
+  | "incident.changed";
+
+export interface RealtimeHandlers {
+  onOpen?: () => void;
+  onEvent?: (eventType: RealtimeEventType) => void;
+  onError?: () => void;
 }
 
 const TOKEN_KEY = "pulseops.accessToken";
@@ -94,6 +138,17 @@ export function getMonitors(accessToken: string) {
   return authenticatedRequest<MonitorSummary[]>("/monitors", accessToken);
 }
 
+export function getMonitor(accessToken: string, monitorId: string) {
+  return authenticatedRequest<MonitorDetail>(`/monitors/${monitorId}`, accessToken);
+}
+
+export function getMonitorCheckResults(accessToken: string, monitorId: string) {
+  return authenticatedRequest<CheckResult[]>(
+    `/monitors/${monitorId}/check-results`,
+    accessToken
+  );
+}
+
 export function createMonitor(accessToken: string, input: CreateMonitorInput) {
   return authenticatedRequest<MonitorSummary>("/monitors", accessToken, {
     method: "POST",
@@ -106,9 +161,17 @@ export function updateMonitorActiveState(
   monitorId: string,
   isActive: boolean
 ) {
+  return updateMonitor(accessToken, monitorId, { isActive });
+}
+
+export function updateMonitor(
+  accessToken: string,
+  monitorId: string,
+  input: UpdateMonitorInput
+) {
   return authenticatedRequest<MonitorSummary>(`/monitors/${monitorId}`, accessToken, {
     method: "PATCH",
-    body: { isActive }
+    body: input
   });
 }
 
@@ -124,6 +187,52 @@ export function runMonitorCheck(accessToken: string, monitorId: string) {
     accessToken,
     { method: "POST" }
   );
+}
+
+export function getIncidents(accessToken: string) {
+  return authenticatedRequest<IncidentListItem[]>("/incidents", accessToken);
+}
+
+export function acknowledgeIncident(accessToken: string, incidentId: string) {
+  return authenticatedRequest<IncidentListItem>(
+    `/incidents/${incidentId}/acknowledge`,
+    accessToken,
+    { method: "PATCH" }
+  );
+}
+
+export function resolveIncident(accessToken: string, incidentId: string) {
+  return authenticatedRequest<IncidentListItem>(
+    `/incidents/${incidentId}/resolve`,
+    accessToken,
+    { method: "PATCH" }
+  );
+}
+
+export function subscribeToRealtime(
+  accessToken: string,
+  handlers: RealtimeHandlers
+) {
+  const url = new URL(`${API_BASE_URL}/realtime/events`);
+  url.searchParams.set("token", accessToken);
+
+  const eventSource = new EventSource(url.toString());
+  const eventTypes: RealtimeEventType[] = [
+    "connected",
+    "monitor.changed",
+    "monitor.deleted",
+    "check.created",
+    "incident.changed"
+  ];
+
+  eventSource.onopen = () => handlers.onOpen?.();
+  eventSource.onerror = () => handlers.onError?.();
+
+  for (const eventType of eventTypes) {
+    eventSource.addEventListener(eventType, () => handlers.onEvent?.(eventType));
+  }
+
+  return () => eventSource.close();
 }
 
 async function authRequest(path: string, body: unknown): Promise<AuthResponse> {

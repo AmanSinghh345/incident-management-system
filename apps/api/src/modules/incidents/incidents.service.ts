@@ -2,10 +2,14 @@ import { ForbiddenException, Injectable, NotFoundException } from "@nestjs/commo
 import { IncidentStatus } from "@prisma/client";
 import { PrismaService } from "../prisma/prisma.service";
 import type { AuthenticatedUser } from "../monitors/monitors.service";
+import { RealtimeService } from "../realtime/realtime.service";
 
 @Injectable()
 export class IncidentsService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly realtimeService: RealtimeService
+  ) {}
 
   list(owner: AuthenticatedUser) {
     return this.prisma.incident.findMany({
@@ -68,7 +72,7 @@ export class IncidentsService {
   async acknowledge(owner: AuthenticatedUser, incidentId: string) {
     await this.get(owner, incidentId);
 
-    return this.prisma.incident.update({
+    const incident = await this.prisma.incident.update({
       where: { id: incidentId },
       data: {
         status: IncidentStatus.ACKNOWLEDGED,
@@ -86,12 +90,16 @@ export class IncidentsService {
         }
       }
     });
+
+    this.realtimeService.emitIncidentChanged(owner.id, incident);
+
+    return incident;
   }
 
   async resolve(owner: AuthenticatedUser, incidentId: string) {
     await this.get(owner, incidentId);
 
-    return this.prisma.incident.update({
+    const incident = await this.prisma.incident.update({
       where: { id: incidentId },
       data: {
         status: IncidentStatus.RESOLVED,
@@ -110,5 +118,9 @@ export class IncidentsService {
         }
       }
     });
+
+    this.realtimeService.emitIncidentChanged(owner.id, incident);
+
+    return incident;
   }
 }

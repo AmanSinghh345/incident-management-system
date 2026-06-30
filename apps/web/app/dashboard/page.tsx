@@ -9,7 +9,8 @@ import {
   clearAccessToken,
   getAccessToken,
   getCurrentUser,
-  getMonitors
+  getMonitors,
+  subscribeToRealtime
 } from "../../lib/auth";
 
 export default function DashboardPage() {
@@ -29,10 +30,12 @@ export default function DashboardPage() {
 
     const token = accessToken;
 
-    async function loadDashboard() {
+    async function loadDashboard(options: { silent?: boolean } = {}) {
       try {
         setError("");
-        setIsLoading(true);
+        if (!options.silent) {
+          setIsLoading(true);
+        }
         const [currentUser, monitorList] = await Promise.all([
           getCurrentUser(token),
           getMonitors(token)
@@ -51,6 +54,14 @@ export default function DashboardPage() {
     }
 
     void loadDashboard();
+
+    return subscribeToRealtime(token, {
+      onEvent: (eventType) => {
+        if (eventType !== "connected") {
+          void loadDashboard({ silent: true });
+        }
+      }
+    });
   }, [router]);
 
   const metrics = useMemo(() => {
@@ -120,6 +131,12 @@ export default function DashboardPage() {
               href="/monitors"
             >
               Add Monitor
+            </Link>
+            <Link
+              className="rounded-md border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-ink"
+              href="/incidents"
+            >
+              View Incidents
             </Link>
             <button
               className="rounded-md border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-ink"

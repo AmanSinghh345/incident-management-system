@@ -10,6 +10,7 @@ import {
   getAccessToken,
   getMonitors,
   runMonitorCheck,
+  subscribeToRealtime,
   updateMonitorActiveState
 } from "../../lib/auth";
 
@@ -37,12 +38,30 @@ export default function MonitorsPage() {
 
     setAccessToken(token);
     void loadMonitors(token);
+
+    return subscribeToRealtime(token, {
+      onEvent: (eventType) => {
+        if (
+          eventType === "monitor.changed" ||
+          eventType === "monitor.deleted" ||
+          eventType === "check.created" ||
+          eventType === "incident.changed"
+        ) {
+          void loadMonitors(token, { silent: true });
+        }
+      }
+    });
   }, [router]);
 
-  async function loadMonitors(token = accessToken) {
+  async function loadMonitors(
+    token = accessToken,
+    options: { silent?: boolean } = {}
+  ) {
     try {
       setError("");
-      setIsLoading(true);
+      if (!options.silent) {
+        setIsLoading(true);
+      }
       const monitorList = await getMonitors(token);
       setMonitors(monitorList);
     } catch (caughtError) {
@@ -262,7 +281,12 @@ export default function MonitorsPage() {
                     key={monitor.id}
                   >
                     <div className="min-w-0 md:col-span-4">
-                      <p className="font-semibold text-ink">{monitor.name}</p>
+                      <Link
+                        className="font-semibold text-ink hover:text-signal"
+                        href={`/monitors/${monitor.id}`}
+                      >
+                        {monitor.name}
+                      </Link>
                       <p className="truncate text-sm text-slate-500">
                         {monitor.url}
                       </p>
@@ -286,6 +310,14 @@ export default function MonitorsPage() {
                       {monitor.incidents.length} incidents
                     </div>
                     <div className="flex flex-wrap gap-2 md:col-span-3 md:justify-end">
+                      <button
+                        className="rounded-md border border-slate-300 px-3 py-2 text-sm font-semibold text-ink disabled:cursor-not-allowed disabled:opacity-60"
+                        disabled={isBusy}
+                        onClick={() => router.push(`/monitors/${monitor.id}`)}
+                        type="button"
+                      >
+                        View
+                      </button>
                       <button
                         className="rounded-md border border-slate-300 px-3 py-2 text-sm font-semibold text-ink disabled:cursor-not-allowed disabled:opacity-60"
                         disabled={isBusy || !monitor.isActive}

@@ -6,6 +6,8 @@ import {
 } from "@nestjs/common";
 import { MonitorStatus } from "@prisma/client";
 import { PrismaService } from "../prisma/prisma.service";
+import { RealtimeService } from "../realtime/realtime.service";
+import { MonitorQueueService } from "../worker/monitor-queue.service";
 
 export interface AuthenticatedUser {
   id: string;
@@ -31,9 +33,13 @@ interface UpdateMonitorBody {
 
 @Injectable()
 export class MonitorsService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly monitorQueueService: MonitorQueueService,
+    private readonly realtimeService: RealtimeService
+  ) {}
 
-  create(owner: AuthenticatedUser, body: CreateMonitorBody) {
+  async create(owner: AuthenticatedUser, body: CreateMonitorBody) {
     const name = this.readRequiredString(body.name, "name");
     const url = this.readUrl(body.url);
     const intervalSeconds = this.readInteger(body.intervalSeconds, "intervalSeconds", {
@@ -47,7 +53,7 @@ export class MonitorsService {
       max: 10
     });
 
-    return this.prisma.monitor.create({
+    const monitor = await this.prisma.monitor.create({
       data: {
         name,
         url,
@@ -58,6 +64,11 @@ export class MonitorsService {
         ownerId: owner.id
       }
     });
+
+    await this.monitorQueueService.scheduleMonitor(monitor.id);
+    this.realtimeService.emitMonitorChanged(owner.id, monitor);
+
+    return monitor;
   }
 
   list(owner: AuthenticatedUser) {
@@ -146,15 +157,27 @@ export class MonitorsService {
       data.status = body.isActive ? MonitorStatus.UP : MonitorStatus.PAUSED;
     }
 
-    return this.prisma.monitor.update({
+    const monitor = await this.prisma.monitor.update({
       where: { id: monitorId },
       data
     });
+
+    if (monitor.isActive) {
+      await this.monitorQueueService.scheduleMonitor(monitor.id);
+    } else {
+      await this.monitorQueueService.removeScheduledMonitor(monitor.id);
+    }
+
+    this.realtimeService.emitMonitorChanged(owner.id, monitor);
+
+    return monitor;
   }
 
   async delete(owner: AuthenticatedUser, monitorId: string) {
     await this.getForOwner(owner, monitorId);
+    await this.monitorQueueService.removeScheduledMonitor(monitorId);
     await this.prisma.monitor.delete({ where: { id: monitorId } });
+    this.realtimeService.emitMonitorDeleted(owner.id, monitorId);
 
     return { deleted: true };
   }
