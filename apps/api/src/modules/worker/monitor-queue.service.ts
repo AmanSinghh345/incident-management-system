@@ -25,11 +25,7 @@ export class MonitorQueueService implements OnModuleInit, OnModuleDestroy {
   ) {}
 
   async onModuleInit() {
-    this.connection = {
-      host: this.configService.get<string>("REDIS_HOST") ?? "localhost",
-      port: Number(this.configService.get<string>("REDIS_PORT") ?? 6379),
-      maxRetriesPerRequest: null
-    };
+    this.connection = this.createRedisConnection();
 
     this.queue = new Queue(CHECK_MONITOR_QUEUE, {
       connection: this.connection
@@ -83,8 +79,15 @@ export class MonitorQueueService implements OnModuleInit, OnModuleDestroy {
   }
 
   async removeScheduledMonitor(monitorId: string) {
-    const delayedJob = await this.queue?.getJob(this.jobId(monitorId));
-    await delayedJob?.remove();
+    const delayedJobs = await this.queue?.getDelayed();
+    const monitorJobs =
+      delayedJobs?.filter(
+        (job) =>
+          job.name === CHECK_MONITOR_JOB &&
+          job.data.monitorId === monitorId
+      ) ?? [];
+
+    await Promise.all(monitorJobs.map((job) => job.remove()));
   }
 
   private async processCheckJob(job: Job<CheckMonitorJob>) {
@@ -118,6 +121,29 @@ export class MonitorQueueService implements OnModuleInit, OnModuleDestroy {
   }
 
   private jobId(monitorId: string) {
-    return `${CHECK_MONITOR_JOB}-${monitorId}`;
+    return `${CHECK_MONITOR_JOB}-${monitorId}-${Date.now()}`;
+  }
+
+  private createRedisConnection(): ConnectionOptions {
+    const redisUrl = this.configService.get<string>("REDIS_URL");
+
+    if (redisUrl) {
+      const url = new URL(redisUrl);
+
+      return {
+        host: url.hostname,
+        port: Number(url.port || 6379),
+        username: url.username ? decodeURIComponent(url.username) : undefined,
+        password: url.password ? decodeURIComponent(url.password) : undefined,
+        tls: url.protocol === "rediss:" ? {} : undefined,
+        maxRetriesPerRequest: null
+      };
+    }
+
+    return {
+      host: this.configService.get<string>("REDIS_HOST") ?? "localhost",
+      port: Number(this.configService.get<string>("REDIS_PORT") ?? 6379),
+      maxRetriesPerRequest: null
+    };
   }
 }

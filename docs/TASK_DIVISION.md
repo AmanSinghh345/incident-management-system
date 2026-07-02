@@ -11,8 +11,8 @@ This project is designed for two developers working in parallel without stepping
 - BullMQ worker
 - URL health check logic
 - Incident auto-create/resolve logic
-- WebSocket events
-- Email alerts
+- SSE realtime events
+- Webhook/email notification attempts
 
 ## Developer B
 

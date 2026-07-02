@@ -25,14 +25,34 @@ enum IncidentStatus {
   RESOLVED
 }
 
+enum IncidentSeverity {
+  LOW
+  MEDIUM
+  HIGH
+  CRITICAL
+}
+
 enum NotificationChannel {
   EMAIL
+  WEBHOOK
 }
 
 enum NotificationStatus {
   PENDING
   SENT
   FAILED
+}
+
+enum WorkspaceRole {
+  OWNER
+  ADMIN
+  MEMBER
+}
+
+enum WorkspaceInviteStatus {
+  PENDING
+  ACCEPTED
+  CANCELLED
 }
 
 model User {
@@ -43,7 +63,15 @@ model User {
   workspaceSlug String           @unique
   monitors      Monitor[]
   incidentNotes IncidentUpdate[]
+  assignedIncidents Incident[]        @relation("IncidentAssignee")
   notifications Notification[]
+  webhookEndpoints WebhookEndpoint[]
+  ownedWorkspaceMembers WorkspaceMember[] @relation("WorkspaceOwner")
+  workspaceMemberships WorkspaceMember[] @relation("WorkspaceMemberUser")
+  sentWorkspaceInvites WorkspaceInvite[] @relation("WorkspaceInviteInviter")
+  receivedWorkspaceInvites WorkspaceInvite[] @relation("WorkspaceInviteAcceptedUser")
+  workspaceAuditLogs AuditLog[] @relation("WorkspaceAuditWorkspaceOwner")
+  actorAuditLogs AuditLog[] @relation("WorkspaceAuditActor")
   createdAt     DateTime         @default(now())
   updatedAt     DateTime         @updatedAt
 }
@@ -52,6 +80,12 @@ model Monitor {
   id              String        @id @default(cuid())
   name            String
   url             String
+  method          String        @default("GET")
+  expectedStatusCode Int        @default(200)
+  timeoutSeconds  Int           @default(5)
+  isPublic        Boolean       @default(true)
+  publicName      String?
+  showUrl         Boolean       @default(false)
   intervalSeconds Int           @default(60)
   failureThreshold Int          @default(3)
   status          MonitorStatus @default(PAUSED)
@@ -83,6 +117,9 @@ model Incident {
   id          String           @id @default(cuid())
   title       String
   status      IncidentStatus   @default(OPEN)
+  severity    IncidentSeverity @default(HIGH)
+  assignedToId String?
+  assignedTo   User?            @relation("IncidentAssignee", fields: [assignedToId], references: [id], onDelete: SetNull)
   monitorId   String
   monitor     Monitor          @relation(fields: [monitorId], references: [id], onDelete: Cascade)
   updates     IncidentUpdate[]
@@ -93,6 +130,7 @@ model Incident {
   updatedAt   DateTime         @updatedAt
 
   @@index([monitorId, status])
+  @@index([assignedToId])
 }
 
 model IncidentUpdate {
@@ -123,4 +161,67 @@ model Notification {
 
   @@index([userId])
   @@index([incidentId])
+}
+
+model WebhookEndpoint {
+  id        String   @id @default(cuid())
+  name      String
+  url       String
+  secret    String   @default(uuid())
+  isActive  Boolean  @default(true)
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([userId])
+}
+
+model WorkspaceMember {
+  id               String        @id @default(cuid())
+  workspaceOwnerId String
+  workspaceOwner   User          @relation("WorkspaceOwner", fields: [workspaceOwnerId], references: [id], onDelete: Cascade)
+  userId           String
+  user             User          @relation("WorkspaceMemberUser", fields: [userId], references: [id], onDelete: Cascade)
+  role             WorkspaceRole @default(MEMBER)
+  createdAt        DateTime      @default(now())
+  updatedAt        DateTime      @updatedAt
+
+  @@unique([workspaceOwnerId, userId])
+  @@index([userId])
+}
+
+model WorkspaceInvite {
+  id               String                @id @default(cuid())
+  workspaceOwnerId String
+  workspaceOwner   User                  @relation("WorkspaceInviteInviter", fields: [workspaceOwnerId], references: [id], onDelete: Cascade)
+  email            String
+  role             WorkspaceRole         @default(MEMBER)
+  status           WorkspaceInviteStatus @default(PENDING)
+  acceptedUserId   String?
+  acceptedUser     User?                 @relation("WorkspaceInviteAcceptedUser", fields: [acceptedUserId], references: [id], onDelete: SetNull)
+  acceptedAt       DateTime?
+  createdAt        DateTime              @default(now())
+  updatedAt        DateTime              @updatedAt
+
+  @@index([workspaceOwnerId, status])
+  @@index([email, status])
+}
+
+model AuditLog {
+  id               String   @id @default(cuid())
+  workspaceOwnerId String
+  workspaceOwner   User     @relation("WorkspaceAuditWorkspaceOwner", fields: [workspaceOwnerId], references: [id], onDelete: Cascade)
+  actorId          String?
+  actor            User?    @relation("WorkspaceAuditActor", fields: [actorId], references: [id], onDelete: SetNull)
+  action           String
+  entityType       String
+  entityId         String?
+  summary          String
+  metadata         Json?
+  createdAt        DateTime @default(now())
+
+  @@index([workspaceOwnerId, createdAt])
+  @@index([actorId])
+  @@index([entityType, entityId])
 }

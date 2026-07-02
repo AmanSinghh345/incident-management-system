@@ -40,6 +40,11 @@ export class MonitorsController {
     return this.monitorsService.getForOwner(request.user, id);
   }
 
+  @Get(":id/stats")
+  stats(@Req() request: AuthenticatedRequest, @Param("id") id: string) {
+    return this.checksService.getStatsForMonitor(request.user, id);
+  }
+
   @Patch(":id")
   update(
     @Req() request: AuthenticatedRequest,

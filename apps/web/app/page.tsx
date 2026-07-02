@@ -11,8 +11,8 @@ export default function HomePage() {
           Real-time incident management for teams that need clear service status.
         </h1>
         <p className="mt-6 max-w-2xl text-lg leading-8 text-slate-600">
-          Monitor URLs, detect failures, create incidents, alert teammates, and
-          keep dashboards updated in real time.
+          Monitor URLs, detect failures, create incidents, send configured
+          notifications, and keep dashboards updated in real time.
         </p>
         <div className="mt-8 flex flex-wrap gap-3">
           <Link

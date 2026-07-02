@@ -83,4 +83,4 @@ This removes the local token and sends the user back to the login page.
 - Add create monitor UI.
 - Add monitor details page.
 - Add incident list/detail pages.
-- Add WebSocket updates after backend realtime events exist.
+- Realtime refresh now uses SSE events from `GET /realtime/events`.

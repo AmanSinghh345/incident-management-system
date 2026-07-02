@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { FormEvent, useEffect, useState } from "react";
 import {
+  MonitorMethod,
   MonitorSummary,
   createMonitor,
   deleteMonitor,
@@ -20,6 +21,12 @@ export default function MonitorsPage() {
   const [monitors, setMonitors] = useState<MonitorSummary[]>([]);
   const [name, setName] = useState("");
   const [url, setUrl] = useState("");
+  const [method, setMethod] = useState<MonitorMethod>("GET");
+  const [expectedStatusCode, setExpectedStatusCode] = useState(200);
+  const [timeoutSeconds, setTimeoutSeconds] = useState(5);
+  const [isPublic, setIsPublic] = useState(true);
+  const [publicName, setPublicName] = useState("");
+  const [showUrl, setShowUrl] = useState(false);
   const [intervalSeconds, setIntervalSeconds] = useState(60);
   const [failureThreshold, setFailureThreshold] = useState(2);
   const [error, setError] = useState("");
@@ -86,6 +93,16 @@ export default function MonitorsPage() {
       return;
     }
 
+    if (expectedStatusCode < 100 || expectedStatusCode > 599) {
+      setError("Expected status code must be between 100 and 599.");
+      return;
+    }
+
+    if (timeoutSeconds < 1 || timeoutSeconds > 60) {
+      setError("Timeout must be between 1 and 60 seconds.");
+      return;
+    }
+
     if (failureThreshold < 1) {
       setError("Failure threshold must be at least 1.");
       return;
@@ -97,11 +114,23 @@ export default function MonitorsPage() {
       await createMonitor(accessToken, {
         name: name.trim(),
         url: url.trim(),
+        method,
+        expectedStatusCode,
+        timeoutSeconds,
+        isPublic,
+        publicName: publicName.trim(),
+        showUrl,
         intervalSeconds,
         failureThreshold
       });
       setName("");
       setUrl("");
+      setMethod("GET");
+      setExpectedStatusCode(200);
+      setTimeoutSeconds(5);
+      setIsPublic(true);
+      setPublicName("");
+      setShowUrl(false);
       setIntervalSeconds(60);
       setFailureThreshold(2);
       setSuccess("Monitor created.");
@@ -208,6 +237,49 @@ export default function MonitorsPage() {
             />
           </div>
           <div className="md:col-span-2">
+            <label className="text-sm font-medium text-ink" htmlFor="method">
+              Method
+            </label>
+            <select
+              className="mt-2 w-full rounded-md border border-slate-300 px-3 py-2"
+              id="method"
+              onChange={(event) => setMethod(event.target.value as MonitorMethod)}
+              value={method}
+            >
+              <option value="GET">GET</option>
+              <option value="POST">POST</option>
+              <option value="HEAD">HEAD</option>
+            </select>
+          </div>
+          <div className="md:col-span-1">
+            <label className="text-sm font-medium text-ink" htmlFor="expected">
+              Expect
+            </label>
+            <input
+              className="mt-2 w-full rounded-md border border-slate-300 px-3 py-2"
+              id="expected"
+              max={599}
+              min={100}
+              onChange={(event) => setExpectedStatusCode(Number(event.target.value))}
+              type="number"
+              value={expectedStatusCode}
+            />
+          </div>
+          <div className="md:col-span-2">
+            <label className="text-sm font-medium text-ink" htmlFor="timeout">
+              Timeout
+            </label>
+            <input
+              className="mt-2 w-full rounded-md border border-slate-300 px-3 py-2"
+              id="timeout"
+              max={60}
+              min={1}
+              onChange={(event) => setTimeoutSeconds(Number(event.target.value))}
+              type="number"
+              value={timeoutSeconds}
+            />
+          </div>
+          <div className="md:col-span-2">
             <label className="text-sm font-medium text-ink" htmlFor="interval">
               Interval
             </label>
@@ -220,7 +292,7 @@ export default function MonitorsPage() {
               value={intervalSeconds}
             />
           </div>
-          <div className="md:col-span-2">
+          <div className="md:col-span-1">
             <label className="text-sm font-medium text-ink" htmlFor="threshold">
               Failures
             </label>
@@ -233,9 +305,40 @@ export default function MonitorsPage() {
               value={failureThreshold}
             />
           </div>
-          <div className="flex items-end md:col-span-1">
+          <div className="md:col-span-4">
+            <label className="text-sm font-medium text-ink" htmlFor="publicName">
+              Public name
+            </label>
+            <input
+              className="mt-2 w-full rounded-md border border-slate-300 px-3 py-2"
+              id="publicName"
+              onChange={(event) => setPublicName(event.target.value)}
+              placeholder="Website"
+              value={publicName}
+            />
+          </div>
+          <div className="flex items-end gap-4 md:col-span-4">
+            <label className="flex items-center gap-2 text-sm font-medium text-ink">
+              <input
+                checked={isPublic}
+                onChange={(event) => setIsPublic(event.target.checked)}
+                type="checkbox"
+              />
+              Status page
+            </label>
+            <label className="flex items-center gap-2 text-sm font-medium text-ink">
+              <input
+                checked={showUrl}
+                disabled={!isPublic}
+                onChange={(event) => setShowUrl(event.target.checked)}
+                type="checkbox"
+              />
+              Show URL
+            </label>
+          </div>
+          <div className="flex items-end md:col-span-12 lg:col-span-12">
             <button
-              className="w-full rounded-md bg-signal px-4 py-2 font-semibold text-white disabled:cursor-not-allowed disabled:opacity-70"
+              className="w-full rounded-md bg-signal px-4 py-2 font-semibold text-white disabled:cursor-not-allowed disabled:opacity-70 md:w-fit"
               disabled={isCreating}
               type="submit"
             >
@@ -309,7 +412,10 @@ export default function MonitorsPage() {
                     <div className="text-sm text-slate-600 md:col-span-1">
                       {monitor.incidents.length} incidents
                     </div>
-                    <div className="flex flex-wrap gap-2 md:col-span-3 md:justify-end">
+                    <div className="text-sm text-slate-600 md:col-span-1">
+                      {monitor.isPublic ? "Public" : "Private"}
+                    </div>
+                    <div className="flex flex-wrap gap-2 md:col-span-2 md:justify-end">
                       <button
                         className="rounded-md border border-slate-300 px-3 py-2 text-sm font-semibold text-ink disabled:cursor-not-allowed disabled:opacity-60"
                         disabled={isBusy}

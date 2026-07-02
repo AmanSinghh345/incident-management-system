@@ -97,5 +97,5 @@ The incident should appear if the failure threshold is crossed.
 - Full timeline UI.
 - Add incident update/note form.
 - Reopen incident action.
-- WebSocket live updates.
-- Alert delivery status.
+- SSE live refresh.
+- Delivery status is visible in notification history.

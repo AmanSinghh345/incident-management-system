@@ -42,14 +42,26 @@ export class AuthService {
       throw new ConflictException("A user with this email already exists.");
     }
 
-    const user = await this.prisma.user.create({
-      data: {
-        name,
-        email,
-        passwordHash: this.passwordService.hash(password),
-        workspaceSlug: await this.createWorkspaceSlug(name, email)
-      },
-      select: this.publicUserSelect()
+    const user = await this.prisma.$transaction(async (prisma) => {
+      const createdUser = await prisma.user.create({
+        data: {
+          name,
+          email,
+          passwordHash: this.passwordService.hash(password),
+          workspaceSlug: await this.createWorkspaceSlug(name, email)
+        },
+        select: this.publicUserSelect()
+      });
+
+      await prisma.workspaceMember.create({
+        data: {
+          workspaceOwnerId: createdUser.id,
+          userId: createdUser.id,
+          role: "OWNER"
+        }
+      });
+
+      return createdUser;
     });
 
     return {

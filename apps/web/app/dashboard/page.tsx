@@ -6,10 +6,14 @@ import { useEffect, useMemo, useState } from "react";
 import {
   AuthUser,
   MonitorSummary,
+  WorkspaceAccess,
   clearAccessToken,
+  getAccessibleWorkspaces,
   getAccessToken,
+  getActiveWorkspaceOwnerId,
   getCurrentUser,
   getMonitors,
+  saveActiveWorkspaceOwnerId,
   subscribeToRealtime
 } from "../../lib/auth";
 
@@ -17,6 +21,8 @@ export default function DashboardPage() {
   const router = useRouter();
   const [user, setUser] = useState<AuthUser | null>(null);
   const [monitors, setMonitors] = useState<MonitorSummary[]>([]);
+  const [workspaces, setWorkspaces] = useState<WorkspaceAccess[]>([]);
+  const [activeWorkspaceOwnerId, setActiveWorkspaceOwnerId] = useState("");
   const [error, setError] = useState("");
   const [isLoading, setIsLoading] = useState(true);
 
@@ -36,12 +42,23 @@ export default function DashboardPage() {
         if (!options.silent) {
           setIsLoading(true);
         }
-        const [currentUser, monitorList] = await Promise.all([
+        const [currentUser, monitorList, workspaceList] = await Promise.all([
           getCurrentUser(token),
-          getMonitors(token)
+          getMonitors(token),
+          getAccessibleWorkspaces(token)
         ]);
+        const storedWorkspaceOwnerId = getActiveWorkspaceOwnerId();
+        const nextWorkspaceOwnerId =
+          storedWorkspaceOwnerId ?? currentUser.workspaceOwnerId;
+
+        if (!storedWorkspaceOwnerId) {
+          saveActiveWorkspaceOwnerId(nextWorkspaceOwnerId);
+        }
+
         setUser(currentUser);
         setMonitors(monitorList);
+        setWorkspaces(workspaceList);
+        setActiveWorkspaceOwnerId(nextWorkspaceOwnerId);
       } catch (caughtError) {
         setError(
           caughtError instanceof Error
@@ -110,6 +127,12 @@ export default function DashboardPage() {
     router.replace("/login");
   }
 
+  function handleWorkspaceChange(workspaceOwnerId: string) {
+    saveActiveWorkspaceOwnerId(workspaceOwnerId);
+    setActiveWorkspaceOwnerId(workspaceOwnerId);
+    window.location.reload();
+  }
+
   return (
     <main className="min-h-screen bg-slate-50 px-6 py-8">
       <section className="mx-auto max-w-6xl">
@@ -126,6 +149,22 @@ export default function DashboardPage() {
             </p>
           </div>
           <div className="flex flex-wrap gap-2">
+            {workspaces.length > 0 ? (
+              <select
+                className="rounded-md border border-slate-300 bg-white px-3 py-2 text-sm font-semibold text-ink"
+                onChange={(event) => handleWorkspaceChange(event.target.value)}
+                value={activeWorkspaceOwnerId}
+              >
+                {workspaces.map((workspace) => (
+                  <option
+                    key={workspace.id}
+                    value={workspace.workspaceOwnerId}
+                  >
+                    {workspace.workspaceOwner.workspaceSlug} ({workspace.role})
+                  </option>
+                ))}
+              </select>
+            ) : null}
             <Link
               className="rounded-md bg-signal px-4 py-2 text-sm font-semibold text-white"
               href="/monitors"
@@ -137,6 +176,32 @@ export default function DashboardPage() {
               href="/incidents"
             >
               View Incidents
+            </Link>
+            {user ? (
+              <Link
+                className="rounded-md border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-ink"
+                href={`/status/${user.workspaceSlug}`}
+              >
+                Status Page
+              </Link>
+            ) : null}
+            <Link
+              className="rounded-md border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-ink"
+              href="/settings/notifications"
+            >
+              Notifications
+            </Link>
+            <Link
+              className="rounded-md border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-ink"
+              href="/settings/team"
+            >
+              Team
+            </Link>
+            <Link
+              className="rounded-md border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-ink"
+              href="/settings/audit"
+            >
+              Audit
             </Link>
             <button
               className="rounded-md border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-ink"

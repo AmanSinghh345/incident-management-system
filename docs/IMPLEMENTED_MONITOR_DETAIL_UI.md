@@ -77,4 +77,4 @@ After the check completes, the page reloads monitor detail and check history so 
 - Show response time chart.
 - Paginate check history.
 - Link incident rows to future incident detail pages.
-- Realtime refresh when WebSocket events exist.
+- Realtime refresh through SSE events.

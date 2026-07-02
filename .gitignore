@@ -8,6 +8,7 @@ docs/*.pdf
 .env.*.local
 
 .next/
+apps/web/tsconfig.tsbuildinfo
 dist/
 build/
 coverage/

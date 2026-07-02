@@ -7,9 +7,13 @@ import {
   CheckResult,
   IncidentSummary,
   MonitorDetail,
+  MonitorMethod,
+  MonitorStats,
+  MonitorStatsBucket,
   getAccessToken,
   getMonitor,
   getMonitorCheckResults,
+  getMonitorStats,
   runMonitorCheck,
   subscribeToRealtime,
   updateMonitor
@@ -22,6 +26,7 @@ export default function MonitorDetailPage() {
   const [accessToken, setAccessToken] = useState("");
   const [monitor, setMonitor] = useState<MonitorDetail | null>(null);
   const [checkResults, setCheckResults] = useState<CheckResult[]>([]);
+  const [stats, setStats] = useState<MonitorStats | null>(null);
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
   const [isLoading, setIsLoading] = useState(true);
@@ -29,6 +34,12 @@ export default function MonitorDetailPage() {
   const [isSaving, setIsSaving] = useState(false);
   const [editName, setEditName] = useState("");
   const [editUrl, setEditUrl] = useState("");
+  const [editMethod, setEditMethod] = useState<MonitorMethod>("GET");
+  const [editExpectedStatusCode, setEditExpectedStatusCode] = useState(200);
+  const [editTimeoutSeconds, setEditTimeoutSeconds] = useState(5);
+  const [editIsPublic, setEditIsPublic] = useState(true);
+  const [editPublicName, setEditPublicName] = useState("");
+  const [editShowUrl, setEditShowUrl] = useState(false);
   const [editIntervalSeconds, setEditIntervalSeconds] = useState(60);
   const [editFailureThreshold, setEditFailureThreshold] = useState(2);
 
@@ -74,14 +85,22 @@ export default function MonitorDetailPage() {
       if (!options.silent) {
         setIsLoading(true);
       }
-      const [monitorDetail, history] = await Promise.all([
+      const [monitorDetail, history, monitorStats] = await Promise.all([
         getMonitor(token, monitorId),
-        getMonitorCheckResults(token, monitorId)
+        getMonitorCheckResults(token, monitorId),
+        getMonitorStats(token, monitorId)
       ]);
       setMonitor(monitorDetail);
       setCheckResults(history);
+      setStats(monitorStats);
       setEditName(monitorDetail.name);
       setEditUrl(monitorDetail.url);
+      setEditMethod(monitorDetail.method);
+      setEditExpectedStatusCode(monitorDetail.expectedStatusCode);
+      setEditTimeoutSeconds(monitorDetail.timeoutSeconds);
+      setEditIsPublic(monitorDetail.isPublic);
+      setEditPublicName(monitorDetail.publicName ?? "");
+      setEditShowUrl(monitorDetail.showUrl);
       setEditIntervalSeconds(monitorDetail.intervalSeconds);
       setEditFailureThreshold(monitorDetail.failureThreshold);
     } catch (caughtError) {
@@ -121,6 +140,16 @@ export default function MonitorDetailPage() {
       return;
     }
 
+    if (editExpectedStatusCode < 100 || editExpectedStatusCode > 599) {
+      setError("Expected status code must be between 100 and 599.");
+      return;
+    }
+
+    if (editTimeoutSeconds < 1 || editTimeoutSeconds > 60) {
+      setError("Timeout must be between 1 and 60 seconds.");
+      return;
+    }
+
     if (editFailureThreshold < 1) {
       setError("Failure threshold must be at least 1.");
       return;
@@ -131,6 +160,12 @@ export default function MonitorDetailPage() {
       await updateMonitor(accessToken, monitorId, {
         name: editName.trim(),
         url: editUrl.trim(),
+        method: editMethod,
+        expectedStatusCode: editExpectedStatusCode,
+        timeoutSeconds: editTimeoutSeconds,
+        isPublic: editIsPublic,
+        publicName: editPublicName.trim(),
+        showUrl: editShowUrl,
         intervalSeconds: editIntervalSeconds,
         failureThreshold: editFailureThreshold
       });
@@ -210,10 +245,60 @@ export default function MonitorDetailPage() {
               <Metric label="Active incidents" value={activeIncidents.length} />
             </div>
 
+            {stats ? (
+              <section className="mt-8 rounded-lg border border-slate-200 bg-white p-5">
+                <div className="flex flex-col gap-2 md:flex-row md:items-start md:justify-between">
+                  <div>
+                    <h2 className="text-lg font-semibold text-ink">Analytics</h2>
+                    <p className="mt-1 text-sm text-slate-500">
+                      Last updated {new Date(stats.window.generatedAt).toLocaleString()}
+                    </p>
+                  </div>
+                  <p className="text-sm text-slate-500">Last 24 hours by hour</p>
+                </div>
+
+                <div className="mt-5 grid gap-4 md:grid-cols-4">
+                  <Metric
+                    label="24h uptime"
+                    value={formatPercent(stats.last24h.uptimePercentage)}
+                  />
+                  <Metric
+                    label="7d uptime"
+                    value={formatPercent(stats.last7d.uptimePercentage)}
+                  />
+                  <Metric
+                    label="Avg response"
+                    value={formatMs(stats.last24h.averageResponseTimeMs)}
+                  />
+                  <Metric
+                    label="24h failures"
+                    value={`${stats.last24h.failedChecks}/${stats.last24h.totalChecks}`}
+                  />
+                </div>
+
+                <HourlyTimeline buckets={stats.hourlyTimeline} />
+              </section>
+            ) : null}
+
             <div className="mt-8 grid gap-6 lg:grid-cols-3">
               <section className="rounded-lg border border-slate-200 bg-white p-5">
                 <h2 className="text-lg font-semibold text-ink">Settings</h2>
                 <dl className="mt-4 space-y-3 text-sm">
+                  <Setting label="Method" value={monitor.method} />
+                  <Setting
+                    label="Public"
+                    value={monitor.isPublic ? "Shown" : "Hidden"}
+                  />
+                  <Setting
+                    label="Public name"
+                    value={monitor.publicName ?? monitor.name}
+                  />
+                  <Setting label="Public URL" value={monitor.showUrl ? "Shown" : "Hidden"} />
+                  <Setting
+                    label="Expected status"
+                    value={String(monitor.expectedStatusCode)}
+                  />
+                  <Setting label="Timeout" value={`${monitor.timeoutSeconds}s`} />
                   <Setting label="Interval" value={`${monitor.intervalSeconds}s`} />
                   <Setting
                     label="Failure threshold"
@@ -255,6 +340,97 @@ export default function MonitorDetailPage() {
                       type="url"
                       value={editUrl}
                     />
+                  </div>
+                  <div>
+                    <label
+                      className="text-sm font-medium text-ink"
+                      htmlFor="method"
+                    >
+                      Method
+                    </label>
+                    <select
+                      className="mt-2 w-full rounded-md border border-slate-300 px-3 py-2"
+                      id="method"
+                      onChange={(event) =>
+                        setEditMethod(event.target.value as MonitorMethod)
+                      }
+                      value={editMethod}
+                    >
+                      <option value="GET">GET</option>
+                      <option value="POST">POST</option>
+                      <option value="HEAD">HEAD</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label
+                      className="text-sm font-medium text-ink"
+                      htmlFor="expected"
+                    >
+                      Expected status
+                    </label>
+                    <input
+                      className="mt-2 w-full rounded-md border border-slate-300 px-3 py-2"
+                      id="expected"
+                      max={599}
+                      min={100}
+                      onChange={(event) =>
+                        setEditExpectedStatusCode(Number(event.target.value))
+                      }
+                      type="number"
+                      value={editExpectedStatusCode}
+                    />
+                  </div>
+                  <div>
+                    <label
+                      className="text-sm font-medium text-ink"
+                      htmlFor="timeout"
+                    >
+                      Timeout seconds
+                    </label>
+                    <input
+                      className="mt-2 w-full rounded-md border border-slate-300 px-3 py-2"
+                      id="timeout"
+                      max={60}
+                      min={1}
+                      onChange={(event) =>
+                        setEditTimeoutSeconds(Number(event.target.value))
+                      }
+                      type="number"
+                      value={editTimeoutSeconds}
+                    />
+                  </div>
+                  <div>
+                    <label
+                      className="text-sm font-medium text-ink"
+                      htmlFor="publicName"
+                    >
+                      Public name
+                    </label>
+                    <input
+                      className="mt-2 w-full rounded-md border border-slate-300 px-3 py-2"
+                      id="publicName"
+                      onChange={(event) => setEditPublicName(event.target.value)}
+                      value={editPublicName}
+                    />
+                  </div>
+                  <div className="flex items-end gap-4">
+                    <label className="flex items-center gap-2 text-sm font-medium text-ink">
+                      <input
+                        checked={editIsPublic}
+                        onChange={(event) => setEditIsPublic(event.target.checked)}
+                        type="checkbox"
+                      />
+                      Status page
+                    </label>
+                    <label className="flex items-center gap-2 text-sm font-medium text-ink">
+                      <input
+                        checked={editShowUrl}
+                        disabled={!editIsPublic}
+                        onChange={(event) => setEditShowUrl(event.target.checked)}
+                        type="checkbox"
+                      />
+                      Show URL
+                    </label>
                   </div>
                   <div>
                     <label
@@ -305,6 +481,12 @@ export default function MonitorDetailPage() {
                       onClick={() => {
                         setEditName(monitor.name);
                         setEditUrl(monitor.url);
+                        setEditMethod(monitor.method);
+                        setEditExpectedStatusCode(monitor.expectedStatusCode);
+                        setEditTimeoutSeconds(monitor.timeoutSeconds);
+                        setEditIsPublic(monitor.isPublic);
+                        setEditPublicName(monitor.publicName ?? "");
+                        setEditShowUrl(monitor.showUrl);
                         setEditIntervalSeconds(monitor.intervalSeconds);
                         setEditFailureThreshold(monitor.failureThreshold);
                       }}
@@ -424,6 +606,62 @@ function IncidentRow({ incident }: { incident: IncidentSummary }) {
       </p>
     </div>
   );
+}
+
+function HourlyTimeline({ buckets }: { buckets: MonitorStatsBucket[] }) {
+  const visibleBuckets = buckets.filter((bucket) => bucket.totalChecks > 0);
+
+  if (visibleBuckets.length === 0) {
+    return (
+      <div className="mt-5 rounded-md bg-slate-100 p-4 text-sm text-slate-600">
+        No checks in the last 24 hours.
+      </div>
+    );
+  }
+
+  return (
+    <div className="mt-5">
+      <div className="flex h-28 items-end gap-1 rounded-md bg-slate-100 p-3">
+        {buckets.map((bucket) => {
+          const uptime = bucket.uptimePercentage ?? 0;
+          const height = bucket.totalChecks === 0 ? 8 : Math.max(12, uptime);
+          const statusClass =
+            bucket.totalChecks === 0
+              ? "bg-slate-300"
+              : bucket.failedChecks > 0
+                ? "bg-alert"
+                : "bg-emerald-500";
+
+          return (
+            <div
+              className="flex flex-1 items-end"
+              key={bucket.start}
+              title={`${new Date(bucket.start).toLocaleTimeString()} - ${formatPercent(
+                bucket.uptimePercentage
+              )}`}
+            >
+              <div
+                className={`w-full rounded-sm ${statusClass}`}
+                style={{ height: `${height}%` }}
+              />
+            </div>
+          );
+        })}
+      </div>
+      <div className="mt-2 flex justify-between text-xs text-slate-500">
+        <span>{new Date(buckets[0]?.start ?? Date.now()).toLocaleTimeString()}</span>
+        <span>Now</span>
+      </div>
+    </div>
+  );
+}
+
+function formatPercent(value: number | null) {
+  return value === null ? "--" : `${value.toFixed(2)}%`;
+}
+
+function formatMs(value: number | null) {
+  return value === null ? "--" : `${value} ms`;
 }
 
 function readError(caughtError: unknown, fallback: string) {

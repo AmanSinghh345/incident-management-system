@@ -1,4 +1,10 @@
-import { Controller, Query, Sse, UnauthorizedException } from "@nestjs/common";
+import {
+  Controller,
+  ForbiddenException,
+  Query,
+  Sse,
+  UnauthorizedException
+} from "@nestjs/common";
 import { PrismaService } from "../prisma/prisma.service";
 import { AuthTokenService } from "../auth/auth-token.service";
 import { RealtimeService } from "./realtime.service";
@@ -12,7 +18,10 @@ export class RealtimeController {
   ) {}
 
   @Sse("events")
-  async events(@Query("token") token?: string) {
+  async events(
+    @Query("token") token?: string,
+    @Query("workspaceOwnerId") requestedWorkspaceOwnerId?: string
+  ) {
     if (!token) {
       throw new UnauthorizedException("Missing access token.");
     }
@@ -27,6 +36,20 @@ export class RealtimeController {
       throw new UnauthorizedException("User no longer exists.");
     }
 
-    return this.realtimeService.subscribe(user.id);
+    const workspaceOwnerId = requestedWorkspaceOwnerId || user.id;
+    const membership = await this.prisma.workspaceMember.findUnique({
+      where: {
+        workspaceOwnerId_userId: {
+          workspaceOwnerId,
+          userId: user.id
+        }
+      }
+    });
+
+    if (!membership) {
+      throw new ForbiddenException("You do not have access to this workspace.");
+    }
+
+    return this.realtimeService.subscribe(workspaceOwnerId);
   }
 }

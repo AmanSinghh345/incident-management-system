@@ -38,7 +38,7 @@ monitor -> delayed job -> worker check -> save result -> schedule next job
 
 ## Why delayed jobs instead of repeatable jobs?
 
-BullMQ repeatable jobs are powerful, but updating or removing repeatable schedules is more complex.
+BullMQ repeatable jobs can handle this use case, but updating or removing repeatable schedules is more complex.
 
 Delayed jobs are simpler for Week 1:
 

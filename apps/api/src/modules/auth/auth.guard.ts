@@ -2,8 +2,10 @@ import {
   CanActivate,
   ExecutionContext,
   Injectable,
+  ForbiddenException,
   UnauthorizedException
 } from "@nestjs/common";
+import { WorkspaceRole } from "@prisma/client";
 import { PrismaService } from "../prisma/prisma.service";
 import { AuthTokenService } from "./auth-token.service";
 
@@ -42,7 +44,71 @@ export class AuthGuard implements CanActivate {
       throw new UnauthorizedException("User no longer exists.");
     }
 
-    request.user = user;
+    const requestedWorkspaceOwnerId = this.readWorkspaceOwnerId(
+      request.headers["x-pulseops-workspace-owner-id"]
+    );
+    const workspaceOwnerId = requestedWorkspaceOwnerId ?? user.id;
+    const membership = await this.prisma.workspaceMember.findUnique({
+      where: {
+        workspaceOwnerId_userId: {
+          workspaceOwnerId,
+          userId: user.id
+        }
+      },
+      include: {
+        workspaceOwner: {
+          select: {
+            workspaceSlug: true
+          }
+        }
+      }
+    });
+
+    if (!membership) {
+      if (workspaceOwnerId === user.id) {
+        const createdMembership = await this.prisma.workspaceMember.create({
+          data: {
+            workspaceOwnerId: user.id,
+            userId: user.id,
+            role: WorkspaceRole.OWNER
+          },
+          include: {
+            workspaceOwner: {
+              select: {
+                workspaceSlug: true
+              }
+            }
+          }
+        });
+
+        request.user = {
+          ...user,
+          workspaceOwnerId: user.id,
+          workspaceRole: createdMembership.role,
+          workspaceSlug: createdMembership.workspaceOwner.workspaceSlug
+        };
+        return true;
+      }
+
+      throw new ForbiddenException("You do not have access to this workspace.");
+    }
+
+    request.user = {
+      ...user,
+      workspaceOwnerId,
+      workspaceRole: membership.role,
+      workspaceSlug: membership.workspaceOwner.workspaceSlug
+    };
     return true;
+  }
+
+  private readWorkspaceOwnerId(value: unknown) {
+    if (Array.isArray(value)) {
+      return value[0];
+    }
+
+    return typeof value === "string" && value.trim().length > 0
+      ? value.trim()
+      : undefined;
   }
 }

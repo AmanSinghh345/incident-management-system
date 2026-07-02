@@ -111,4 +111,4 @@ Then it reloads the monitor list.
 - Monitor details page with full check history.
 - Better confirmation modal component.
 - Toast component instead of inline success messages.
-- Realtime refresh when WebSocket events are added.
+- Realtime refresh through SSE events.

@@ -6,10 +6,12 @@ import { useEffect, useMemo, useState } from "react";
 import {
   IncidentListItem,
   acknowledgeIncident,
+  assignIncidentToMe,
   getAccessToken,
   getIncidents,
   resolveIncident,
-  subscribeToRealtime
+  subscribeToRealtime,
+  unassignIncident
 } from "../../lib/auth";
 
 export default function IncidentsPage() {
@@ -48,11 +50,24 @@ export default function IncidentsPage() {
       RESOLVED: 2
     };
 
-    return [...incidents].sort((left, right) => {
+  return [...incidents].sort((left, right) => {
+      const severityRank = {
+        CRITICAL: 0,
+        HIGH: 1,
+        MEDIUM: 2,
+        LOW: 3
+      };
       const statusDifference = statusRank[left.status] - statusRank[right.status];
 
       if (statusDifference !== 0) {
         return statusDifference;
+      }
+
+      const severityDifference =
+        severityRank[left.severity] - severityRank[right.severity];
+
+      if (severityDifference !== 0) {
+        return severityDifference;
       }
 
       return (
@@ -94,6 +109,20 @@ export default function IncidentsPage() {
     await runIncidentAction(incident.id, async () => {
       await resolveIncident(accessToken, incident.id);
       setSuccess("Incident resolved.");
+    });
+  }
+
+  async function handleAssignToMe(incident: IncidentListItem) {
+    await runIncidentAction(incident.id, async () => {
+      await assignIncidentToMe(accessToken, incident.id);
+      setSuccess("Incident assigned.");
+    });
+  }
+
+  async function handleUnassign(incident: IncidentListItem) {
+    await runIncidentAction(incident.id, async () => {
+      await unassignIncident(accessToken, incident.id);
+      setSuccess("Incident unassigned.");
     });
   }
 
@@ -191,10 +220,14 @@ export default function IncidentsPage() {
                     <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
                       <div>
                         <div className="flex flex-wrap items-center gap-2">
-                          <h3 className="text-lg font-semibold text-ink">
+                          <Link
+                            className="text-lg font-semibold text-ink hover:text-signal"
+                            href={`/incidents/${incident.id}`}
+                          >
                             {incident.title}
-                          </h3>
+                          </Link>
                           <IncidentStatusBadge status={incident.status} />
+                          <IncidentSeverityBadge severity={incident.severity} />
                         </div>
                         <p className="mt-2 text-sm text-slate-600">
                           {incident.monitor.name} · {incident.monitor.url}
@@ -207,6 +240,9 @@ export default function IncidentsPage() {
                               ).toLocaleString()}`
                             : ""}
                         </p>
+                        <p className="mt-1 text-sm text-slate-500">
+                          Assigned to {incident.assignedTo?.name ?? "Unassigned"}
+                        </p>
                         {latestUpdate ? (
                           <p className="mt-4 rounded-md bg-slate-100 px-3 py-2 text-sm text-slate-700">
                             {latestUpdate.message}
@@ -217,11 +253,31 @@ export default function IncidentsPage() {
                       <div className="flex flex-wrap gap-2">
                         <button
                           className="rounded-md border border-slate-300 px-3 py-2 text-sm font-semibold text-ink disabled:cursor-not-allowed disabled:opacity-60"
+                          disabled={isBusy}
+                          onClick={() => router.push(`/incidents/${incident.id}`)}
+                          type="button"
+                        >
+                          View
+                        </button>
+                        <button
+                          className="rounded-md border border-slate-300 px-3 py-2 text-sm font-semibold text-ink disabled:cursor-not-allowed disabled:opacity-60"
                           disabled={isBusy || incident.status !== "OPEN"}
                           onClick={() => void handleAcknowledge(incident)}
                           type="button"
                         >
                           Acknowledge
+                        </button>
+                        <button
+                          className="rounded-md border border-slate-300 px-3 py-2 text-sm font-semibold text-ink disabled:cursor-not-allowed disabled:opacity-60"
+                          disabled={isBusy || incident.status === "RESOLVED"}
+                          onClick={() =>
+                            incident.assignedTo
+                              ? void handleUnassign(incident)
+                              : void handleAssignToMe(incident)
+                          }
+                          type="button"
+                        >
+                          {incident.assignedTo ? "Unassign" : "Assign"}
                         </button>
                         <button
                           className="rounded-md border border-emerald-200 px-3 py-2 text-sm font-semibold text-emerald-700 disabled:cursor-not-allowed disabled:opacity-60"
@@ -265,6 +321,27 @@ function IncidentStatusBadge({ status }: { status: IncidentListItem["status"] })
       className={`inline-flex rounded-md border px-2 py-1 text-xs font-semibold ${classNameByStatus[status]}`}
     >
       {status}
+    </span>
+  );
+}
+
+function IncidentSeverityBadge({
+  severity
+}: {
+  severity: IncidentListItem["severity"];
+}) {
+  const classNameBySeverity = {
+    LOW: "border-slate-200 bg-slate-100 text-slate-600",
+    MEDIUM: "border-sky-200 bg-sky-50 text-sky-700",
+    HIGH: "border-amber-200 bg-amber-50 text-amber-700",
+    CRITICAL: "border-red-200 bg-red-50 text-alert"
+  };
+
+  return (
+    <span
+      className={`inline-flex rounded-md border px-2 py-1 text-xs font-semibold ${classNameBySeverity[severity]}`}
+    >
+      {severity}
     </span>
   );
 }

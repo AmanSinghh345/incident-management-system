@@ -77,6 +77,6 @@ This keeps users from reading or changing other users' incidents.
 
 - Add custom incident updates: `POST /incidents/:id/updates`
 - Add severity field to the Prisma schema.
-- Emit WebSocket events when incidents open/resolve.
-- Send notifications when incidents open/resolve.
+- Emit SSE events when incidents open/resolve.
+- Notification delivery attempts are handled by the notifications module.
 - Use two-success resolve threshold instead of immediate auto-resolve.
