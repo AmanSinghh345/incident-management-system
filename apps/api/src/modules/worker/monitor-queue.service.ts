@@ -87,7 +87,18 @@ export class MonitorQueueService implements OnModuleInit, OnModuleDestroy {
           job.data.monitorId === monitorId
       ) ?? [];
 
-    await Promise.all(monitorJobs.map((job) => job.remove()));
+    await Promise.all(
+      monitorJobs.map(async (job) => {
+        try {
+          await job.remove();
+        } catch (error) {
+          const message = error instanceof Error ? error.message : String(error);
+          this.logger.warn(
+            `Could not remove scheduled monitor job ${job.id}: ${message}`
+          );
+        }
+      })
+    );
   }
 
   private async processCheckJob(job: Job<CheckMonitorJob>) {
@@ -111,9 +122,21 @@ export class MonitorQueueService implements OnModuleInit, OnModuleDestroy {
       select: { id: true }
     });
 
-    await Promise.all(
+    const results = await Promise.allSettled(
       monitors.map((monitor) => this.scheduleMonitor(monitor.id, 5))
     );
+
+    results.forEach((result, index) => {
+      if (result.status === "rejected") {
+        const monitorId = monitors[index]?.id ?? "unknown";
+        const message =
+          result.reason instanceof Error
+            ? result.reason.message
+            : String(result.reason);
+
+        this.logger.warn(`Could not schedule monitor ${monitorId}: ${message}`);
+      }
+    });
 
     if (monitors.length > 0) {
       this.logger.log(`Scheduled ${monitors.length} active monitor(s).`);

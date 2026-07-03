@@ -65,6 +65,16 @@ Local URLs:
 - API: `http://localhost:4000`
 - API health: `http://localhost:4000/health`
 
+Health check response:
+
+```json
+{
+  "ok": true,
+  "service": "pulseops-api",
+  "time": "2026-07-03T00:00:00.000Z"
+}
+```
+
 Useful verification commands:
 
 ```bash
@@ -141,3 +151,32 @@ Use this flow for local demos and interviews:
 11. Open the public status page from the Dashboard.
 12. Optional: create a webhook endpoint and send a test webhook, then check notification history.
 
+## Render Health Check
+
+There is no global API prefix in `apps/api/src/main.ts`, so the health-check route is:
+
+```text
+GET /health
+HEAD /health
+```
+
+Local health-check URL:
+
+```text
+http://localhost:4000/health
+```
+
+Current Render health-check URL:
+
+```text
+https://incident-management-system-wv1w.onrender.com/health
+```
+
+cron-job.org or UptimeRobot can ping the Render free backend to reduce cold starts:
+
+```text
+URL: https://incident-management-system-wv1w.onrender.com/health
+Method: GET
+Schedule: every 10 minutes
+Cron expression: */10 * * * *
+```
