@@ -13,7 +13,7 @@ It includes monitor scheduling, incident workflows, notification delivery attemp
 - Incident actions for acknowledge, resolve, assignment, severity changes, and timeline updates.
 - Server-Sent Events (SSE) for monitor, check, and incident refresh events.
 - Signed webhook delivery attempts for incident/test events.
-- Resend email delivery path when `RESEND_API_KEY` and `EMAIL_FROM` are configured.
+- Resend email delivery path when `RESEND_API_KEY` and `RESEND_FROM` are configured.
 - Notification history for webhook/email attempts.
 - Public workspace status page with public monitor controls and recent incident history.
 - Team invites, workspace switching, and audit logs.
@@ -124,7 +124,7 @@ JWT_SECRET=replace-with-a-long-random-value
 FRONTEND_URL=http://localhost:3000
 BACKEND_PORT=4000
 RESEND_API_KEY=
-EMAIL_FROM="PulseOps <alerts@example.com>"
+RESEND_FROM="PulseOps <alerts@pulseops.space>"
 ```
 
 Web variable:

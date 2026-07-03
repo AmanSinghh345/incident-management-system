@@ -2,6 +2,7 @@ import {
   BadRequestException,
   ForbiddenException,
   Injectable,
+  Logger,
   NotFoundException
 } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
@@ -19,6 +20,8 @@ interface WebhookBody {
 
 @Injectable()
 export class NotificationsService {
+  private readonly logger = new Logger(NotificationsService.name);
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly configService: ConfigService,
@@ -394,13 +397,26 @@ export class NotificationsService {
     html: string;
     text: string;
   }) {
-    const apiKey = this.configService.get<string>("RESEND_API_KEY");
-    const from = this.configService.get<string>("EMAIL_FROM");
+    const apiKey = this.configService.get<string>("RESEND_API_KEY")?.trim();
+    const from = this.configService.get<string>("RESEND_FROM")?.trim();
 
-    if (!apiKey || !from) {
+    if (!apiKey) {
+      const message = "Resend email is not configured. Set RESEND_API_KEY.";
+      this.logger.warn(message);
+
       return {
         ok: false,
-        message: "Resend email is not configured. Set RESEND_API_KEY and EMAIL_FROM."
+        message
+      };
+    }
+
+    if (!from) {
+      const message = "Resend email sender is not configured. Set RESEND_FROM.";
+      this.logger.warn(message);
+
+      return {
+        ok: false,
+        message
       };
     }
 
@@ -423,19 +439,28 @@ export class NotificationsService {
       const data = (await response.json().catch(() => null)) as
         | { id?: string; message?: string }
         | null;
+      const message = response.ok
+        ? `Email sent via Resend${data?.id ? ` (${data.id})` : ""}.`
+        : `Resend email failed with status ${response.status}${
+            data?.message ? `: ${data.message}` : ""
+          }.`;
+
+      if (!response.ok) {
+        this.logger.error(message);
+      }
 
       return {
         ok: response.ok,
-        message: response.ok
-          ? `Email sent via Resend${data?.id ? ` (${data.id})` : ""}.`
-          : `Resend email failed with status ${response.status}${
-              data?.message ? `: ${data.message}` : ""
-            }.`
+        message
       };
     } catch (error) {
+      const message =
+        error instanceof Error ? error.message : "Resend email request failed.";
+      this.logger.error(`Resend email request failed: ${message}`);
+
       return {
         ok: false,
-        message: error instanceof Error ? error.message : "Resend email request failed."
+        message
       };
     }
   }
