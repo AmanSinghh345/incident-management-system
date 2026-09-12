@@ -180,3 +180,8 @@ Method: GET
 Schedule: every 10 minutes
 Cron expression: */10 * * * *
 ```
+#System Design 
+
+<img width="998" height="656" alt="image" src="https://github.com/user-attachments/assets/73778b69-900f-497e-98d5-59d4f45f408a" />
+
+
