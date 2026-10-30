@@ -1,0 +1,22 @@
+
+services:
+  postgres-test:
+    image: postgres:16-alpine
+    container_name: pulseops-test-postgres
+    environment:
+      POSTGRES_USER: pulseops_test
+      POSTGRES_PASSWORD: pulseops_test
+      POSTGRES_DB: pulseops_test
+    ports:
+      - "5434:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U pulseops_test -d pulseops_test"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  redis-test:
+    image: redis:7-alpine
+    container_name: pulseops-test-redis
+    ports:
+      - "6380:6379"

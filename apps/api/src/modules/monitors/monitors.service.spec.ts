@@ -161,6 +161,91 @@ describe("MonitorsService", () => {
       expect(queue.scheduleMonitor).toHaveBeenCalledWith("monitor-2");
       expect(result).toEqual(createdMonitor);
     });
+
+    it.each([
+      ["missing name", { url: "https://example.com" }],
+      ["empty name", { name: "   ", url: "https://example.com" }],
+      ["missing URL", { name: "Website" }],
+      ["invalid URL format", { name: "Website", url: "not-a-url" }],
+      ["non-HTTP URL", { name: "Website", url: "ftp://example.com" }],
+      ["invalid method", { name: "Website", url: "https://example.com", method: "PUT" }],
+      ["non-string method", { name: "Website", url: "https://example.com", method: 123 }],
+      ["invalid expected status code", { name: "Website", url: "https://example.com", expectedStatusCode: 99 }],
+      ["non-integer timeout", { name: "Website", url: "https://example.com", timeoutSeconds: 2.5 }],
+      ["invalid public flag", { name: "Website", url: "https://example.com", isPublic: "true" }],
+      ["invalid showUrl flag", { name: "Website", url: "https://example.com", showUrl: 1 }],
+      ["invalid interval", { name: "Website", url: "https://example.com", intervalSeconds: 10 }],
+      ["invalid failure threshold", { name: "Website", url: "https://example.com", failureThreshold: 11 }],
+      ["non-string public name", { name: "Website", url: "https://example.com", publicName: 123 }]
+    ])("should reject %s", async (_label, body) => {
+      await expect(service.create(owner, body)).rejects.toThrow(BadRequestException);
+      expect(prisma.monitor.create).not.toHaveBeenCalled();
+    });
+
+    it("should create a monitor with custom configuration", async () => {
+      const createdMonitor = {
+        id: "monitor-3",
+        name: "Custom Monitor",
+        url: "https://example.com/",
+        method: "POST",
+        expectedStatusCode: 201,
+        timeoutSeconds: 10,
+        isPublic: false,
+        publicName: "Public API",
+        showUrl: true,
+        intervalSeconds: 120,
+        failureThreshold: 5,
+        status: MonitorStatus.UP,
+        isActive: true,
+        ownerId: "owner-1"
+      };
+
+      prisma.monitor.create.mockResolvedValue(createdMonitor);
+
+      await service.create(owner, {
+        name: "Custom Monitor",
+        url: "https://example.com",
+        method: "post",
+        expectedStatusCode: 201,
+        timeoutSeconds: 10,
+        isPublic: false,
+        publicName: "Public API",
+        showUrl: true,
+        intervalSeconds: 120,
+        failureThreshold: 5
+      });
+
+      expect(prisma.monitor.create).toHaveBeenCalledWith({
+        data: expect.objectContaining({
+          name: "Custom Monitor",
+          url: "https://example.com/",
+          method: "POST",
+          expectedStatusCode: 201,
+          timeoutSeconds: 10,
+          isPublic: false,
+          publicName: "Public API",
+          showUrl: true,
+          intervalSeconds: 120,
+          failureThreshold: 5
+        })
+      });
+    });
+
+    it("should convert an empty public name to null", async () => {
+      prisma.monitor.create.mockResolvedValue({ id: "monitor-4" });
+
+      await service.create(owner, {
+        name: "Website",
+        url: "https://example.com",
+        publicName: "   "
+      });
+
+      expect(prisma.monitor.create).toHaveBeenCalledWith({
+        data: expect.objectContaining({
+          publicName: null
+        })
+      });
+    });
   });
 
   describe("update", () => {
@@ -234,6 +319,105 @@ describe("MonitorsService", () => {
 
       await expect(
         service.update(member, "monitor-1", { name: "Unauthorized Update" })
+      ).rejects.toThrow(ForbiddenException);
+
+      expect(prisma.monitor.update).not.toHaveBeenCalled();
+    });
+
+    it.each([
+      ["empty name", { name: "   " }],
+      ["invalid URL", { url: "invalid-url" }],
+      ["invalid method", { method: "PUT" }],
+      ["non-integer expected status", { expectedStatusCode: 200.5 }],
+      ["out-of-range expected status", { expectedStatusCode: 600 }],
+      ["invalid timeout", { timeoutSeconds: 0 }],
+      ["invalid isPublic", { isPublic: "true" }],
+      ["invalid publicName", { publicName: 123 }],
+      ["invalid showUrl", { showUrl: "false" }],
+      ["invalid interval", { intervalSeconds: 20 }],
+      ["invalid failure threshold", { failureThreshold: 11 }],
+      ["invalid isActive", { isActive: "false" }]
+    ])("should reject %s", async (_label, body) => {
+      await expect(
+        service.update(owner, "monitor-1", body)
+      ).rejects.toThrow(BadRequestException);
+      expect(prisma.monitor.update).not.toHaveBeenCalled();
+    });
+
+    it("should update all supported fields", async () => {
+      const updatedMonitor = {
+        ...existingMonitor,
+        name: "Updated",
+        url: "https://new-example.com/",
+        method: "POST",
+        expectedStatusCode: 201,
+        timeoutSeconds: 10,
+        isPublic: false,
+        publicName: "API",
+        showUrl: true,
+        intervalSeconds: 120,
+        failureThreshold: 5
+      };
+
+      prisma.monitor.update.mockResolvedValue(updatedMonitor);
+
+      await service.update(owner, "monitor-1", {
+        name: "Updated",
+        url: "https://new-example.com",
+        method: "post",
+        expectedStatusCode: 201,
+        timeoutSeconds: 10,
+        isPublic: false,
+        publicName: "API",
+        showUrl: true,
+        intervalSeconds: 120,
+        failureThreshold: 5
+      });
+
+      expect(prisma.monitor.update).toHaveBeenCalledWith({
+        where: { id: "monitor-1" },
+        data: {
+          name: "Updated",
+          url: "https://new-example.com/",
+          method: "POST",
+          expectedStatusCode: 201,
+          timeoutSeconds: 10,
+          isPublic: false,
+          publicName: "API",
+          showUrl: true,
+          intervalSeconds: 120,
+          failureThreshold: 5
+        }
+      });
+    });
+
+    it("should convert an empty public name to null", async () => {
+      await service.update(owner, "monitor-1", { publicName: "   " });
+
+      expect(prisma.monitor.update).toHaveBeenCalledWith({
+        where: { id: "monitor-1" },
+        data: { publicName: null }
+      });
+    });
+
+    it("should reject updating a monitor that does not exist", async () => {
+      prisma.monitor.findUnique.mockResolvedValue(null);
+
+      await expect(
+        service.update(owner, "missing-monitor", { name: "Updated" })
+      ).rejects.toThrow(NotFoundException);
+
+      expect(prisma.monitor.update).not.toHaveBeenCalled();
+    });
+
+    it("should reject updating another workspace's monitor", async () => {
+      prisma.monitor.findUnique.mockResolvedValue({
+        ...existingMonitor,
+        ownerId: "another-owner"
+      });
+
+      await expect(
+        service.update(owner, "monitor-1", { name: "Updated" })
       ).rejects.toThrow(ForbiddenException);
 
       expect(prisma.monitor.update).not.toHaveBeenCalled();
@@ -314,10 +498,15 @@ describe("MonitorsService", () => {
   });
 
   describe("delete", () => {
+    const existingMonitor = {
+      id: "monitor-1",
+      name: "My Website",
+      url: "https://example.com/",
+      ownerId: "owner-1"
+    };
+
     beforeEach(() => {
-      prisma.monitor.findUnique
-        .mockResolvedValueOnce({ id: "monitor-1", name: "My Website", ownerId: "owner-1" })
-        .mockResolvedValueOnce({ name: "My Website", url: "https://example.com/" });
+      prisma.monitor.findUnique.mockResolvedValue(existingMonitor);
     });
 
     it("should delete a monitor and clean up its scheduled job", async () => {
@@ -349,6 +538,29 @@ describe("MonitorsService", () => {
       ).rejects.toThrow(ForbiddenException);
 
       expect(queue.removeScheduledMonitor).not.toHaveBeenCalled();
+      expect(prisma.monitor.delete).not.toHaveBeenCalled();
+    });
+
+    it("should reject when monitor does not exist", async () => {
+      prisma.monitor.findUnique.mockResolvedValueOnce(null);
+
+      await expect(
+        service.delete(owner, "missing-monitor")
+      ).rejects.toThrow(NotFoundException);
+
+      expect(prisma.monitor.delete).not.toHaveBeenCalled();
+    });
+
+    it("should reject deleting another workspace's monitor", async () => {
+      prisma.monitor.findUnique.mockResolvedValueOnce({
+        ...existingMonitor,
+        ownerId: "another-owner"
+      });
+
+      await expect(
+        service.delete(owner, "monitor-1")
+      ).rejects.toThrow(ForbiddenException);
+
       expect(prisma.monitor.delete).not.toHaveBeenCalled();
     });
   });

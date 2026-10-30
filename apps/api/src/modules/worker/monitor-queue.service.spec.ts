@@ -1,6 +1,11 @@
-
 import { ConfigService } from "@nestjs/config";
+import { Queue, Worker } from "bullmq";
 import { MonitorQueueService } from "./monitor-queue.service";
+
+jest.mock("bullmq", () => ({
+  Queue: jest.fn(),
+  Worker: jest.fn()
+}));
 
 describe("MonitorQueueService", () => {
   let service: MonitorQueueService;
@@ -285,6 +290,129 @@ describe("MonitorQueueService", () => {
 
       expect(worker.close).toHaveBeenCalled();
       expect(queue.close).toHaveBeenCalled();
+    });
+  });
+
+  describe("createRedisConnection", () => {
+    it("should create a Redis connection from REDIS_URL", () => {
+      config.get.mockImplementation((key: string) => {
+        if (key === "REDIS_URL") {
+          return "redis://user%40name:p%40ss@example.com:6380";
+        }
+        return undefined;
+      });
+
+      const connection = (service as any).createRedisConnection();
+
+      expect(connection).toEqual(
+        expect.objectContaining({
+          host: "example.com",
+          port: 6380,
+          username: "user@name",
+          password: "p@ss",
+          maxRetriesPerRequest: null
+        })
+      );
+    });
+
+    it("should enable TLS for a rediss URL", () => {
+      config.get.mockImplementation((key: string) => {
+        if (key === "REDIS_URL") {
+          return "rediss://example.com:6380";
+        }
+        return undefined;
+      });
+
+      const connection = (service as any).createRedisConnection();
+
+      expect(connection).toEqual(
+        expect.objectContaining({
+          host: "example.com",
+          port: 6380,
+          tls: {},
+          maxRetriesPerRequest: null
+        })
+      );
+    });
+
+    it("should use default Redis settings when REDIS_URL is absent", () => {
+      config.get.mockReturnValue(undefined);
+
+      const connection = (service as any).createRedisConnection();
+
+      expect(connection).toEqual({
+        host: "localhost",
+        port: 6379,
+        maxRetriesPerRequest: null
+      });
+    });
+
+    it("should use REDIS_HOST and REDIS_PORT when REDIS_URL is absent", () => {
+      config.get.mockImplementation((key: string) => {
+        const values: Record<string, string> = {
+          REDIS_HOST: "redis.example.com",
+          REDIS_PORT: "6381"
+        };
+        return values[key];
+      });
+
+      const connection = (service as any).createRedisConnection();
+
+      expect(connection).toEqual({
+        host: "redis.example.com",
+        port: 6381,
+        maxRetriesPerRequest: null
+      });
+    });
+  });
+
+  describe("onModuleInit", () => {
+    it("should initialize the queue and worker and schedule existing monitors", async () => {
+      config.get.mockReturnValue(undefined);
+
+      const queueInstance = {
+        add: jest.fn(),
+        getDelayed: jest.fn(),
+        close: jest.fn()
+      };
+      const workerInstance = {
+        on: jest.fn(),
+        close: jest.fn()
+      };
+
+      (Queue as unknown as jest.Mock).mockImplementation(() => queueInstance);
+      (Worker as unknown as jest.Mock).mockImplementation(() => workerInstance);
+
+      prisma.monitor.findMany.mockResolvedValue([]);
+
+      await service.onModuleInit();
+
+      expect(Queue).toHaveBeenCalledWith(
+        "monitor-checks",
+        expect.objectContaining({
+          connection: expect.objectContaining({
+            host: "localhost",
+            port: 6379
+          })
+        })
+      );
+
+      expect(Worker).toHaveBeenCalledWith(
+        "monitor-checks",
+        expect.any(Function),
+        expect.objectContaining({
+          connection: expect.objectContaining({
+            host: "localhost",
+            port: 6379
+          })
+        })
+      );
+
+      expect(workerInstance.on).toHaveBeenCalledWith(
+        "failed",
+        expect.any(Function)
+      );
+      expect(prisma.monitor.findMany).toHaveBeenCalled();
     });
   });
 });
