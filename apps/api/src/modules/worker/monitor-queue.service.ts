@@ -28,13 +28,16 @@ export class MonitorQueueService implements OnModuleInit, OnModuleDestroy {
     this.connection = this.createRedisConnection();
 
     this.queue = new Queue(CHECK_MONITOR_QUEUE, {
-      connection: this.connection
+      connection: this.connection,
     });
 
     this.worker = new Worker(
       CHECK_MONITOR_QUEUE,
       (job: Job<CheckMonitorJob>) => this.processCheckJob(job),
-      { connection: this.connection }
+      {
+        connection: this.connection,
+        concurrency: 5,
+      }
     );
 
     this.worker.on("failed", (job, error) => {
@@ -57,8 +60,8 @@ export class MonitorQueueService implements OnModuleInit, OnModuleDestroy {
       select: {
         id: true,
         intervalSeconds: true,
-        isActive: true
-      }
+        isActive: true,
+      },
     });
 
     if (!monitor || !monitor.isActive || !this.queue) {
@@ -73,7 +76,7 @@ export class MonitorQueueService implements OnModuleInit, OnModuleDestroy {
         delay: (delaySeconds ?? monitor.intervalSeconds) * 1000,
         jobId: this.jobId(monitor.id),
         removeOnComplete: true,
-        removeOnFail: 100
+        removeOnFail: 100,
       }
     );
   }
@@ -105,7 +108,7 @@ export class MonitorQueueService implements OnModuleInit, OnModuleDestroy {
     const { monitorId } = job.data;
     const monitor = await this.prisma.monitor.findUnique({
       where: { id: monitorId },
-      select: { id: true, isActive: true, intervalSeconds: true }
+      select: { id: true, isActive: true, intervalSeconds: true },
     });
 
     if (!monitor || !monitor.isActive) {
@@ -119,7 +122,7 @@ export class MonitorQueueService implements OnModuleInit, OnModuleDestroy {
   private async scheduleExistingActiveMonitors() {
     const monitors = await this.prisma.monitor.findMany({
       where: { isActive: true },
-      select: { id: true }
+      select: { id: true },
     });
 
     const results = await Promise.allSettled(
@@ -159,14 +162,14 @@ export class MonitorQueueService implements OnModuleInit, OnModuleDestroy {
         username: url.username ? decodeURIComponent(url.username) : undefined,
         password: url.password ? decodeURIComponent(url.password) : undefined,
         tls: url.protocol === "rediss:" ? {} : undefined,
-        maxRetriesPerRequest: null
+        maxRetriesPerRequest: null,
       };
     }
 
     return {
       host: this.configService.get<string>("REDIS_HOST") ?? "localhost",
       port: Number(this.configService.get<string>("REDIS_PORT") ?? 6379),
-      maxRetriesPerRequest: null
+      maxRetriesPerRequest: null,
     };
   }
 }
